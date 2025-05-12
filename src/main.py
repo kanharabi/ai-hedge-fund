@@ -1,24 +1,25 @@
+import argparse
+import json
 import sys
+from datetime import datetime
 
+import questionary
+from colorama import Fore, init, Style
+from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
-from colorama import Fore, Style, init
-import questionary
+
+from src.agents.backtester import backtester_agent
 from src.agents.portfolio_manager import portfolio_management_agent
 from src.agents.risk_manager import risk_management_agent
 from src.graph.state import AgentState
-from src.utils.display import print_trading_output
+from src.llm.models import get_model_info, LLM_ORDER, ModelProvider, OLLAMA_LLM_ORDER
 from src.utils.analysts import ANALYST_ORDER, get_analyst_nodes
-from src.utils.progress import progress
-from src.llm.models import LLM_ORDER, OLLAMA_LLM_ORDER, get_model_info, ModelProvider
+from src.utils.display import display_backtest_summary_table, print_trading_output
 from src.utils.ollama import ensure_ollama_and_model
-
-import argparse
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+from src.utils.progress import progress
 from src.utils.visualize import save_graph_as_png
-import json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -51,6 +52,7 @@ def run_hedge_fund(
     selected_analysts: list[str] = [],
     model_name: str = "gpt-4o",
     model_provider: str = "OpenAI",
+    benchmark: str = "VOO",
 ):
     # Start progress tracking
     progress.start()
@@ -76,19 +78,22 @@ def run_hedge_fund(
                     "start_date": start_date,
                     "end_date": end_date,
                     "analyst_signals": {},
+                    "benchmark": benchmark,
                 },
                 "metadata": {
                     "show_reasoning": show_reasoning,
                     "model_name": model_name,
                     "model_provider": model_provider,
+                    "selected_analysts": selected_analysts,
                 },
             },
         )
 
         return {
-            "decisions": parse_hedge_fund_response(final_state["messages"][-1].content),
+            "decisions": parse_hedge_fund_response(final_state["messages"][-2].content),
             "analyst_signals": final_state["data"]["analyst_signals"],
-        }
+            "backtest_results": final_state["data"].get("backtest_results", None),
+        }, final_state
     finally:
         # Stop progress tracking
         progress.stop()
@@ -119,6 +124,7 @@ def create_workflow(selected_analysts=None):
     # Always add risk and portfolio management
     workflow.add_node("risk_management_agent", risk_management_agent)
     workflow.add_node("portfolio_manager", portfolio_management_agent)
+    workflow.add_node("backtester_agent", backtester_agent)
 
     # Connect selected analysts to risk management
     for analyst_key in selected_analysts:
@@ -126,7 +132,8 @@ def create_workflow(selected_analysts=None):
         workflow.add_edge(node_name, "risk_management_agent")
 
     workflow.add_edge("risk_management_agent", "portfolio_manager")
-    workflow.add_edge("portfolio_manager", END)
+    workflow.add_edge("portfolio_manager", "backtester_agent")
+    workflow.add_edge("backtester_agent", END)
 
     workflow.set_entry_point("start_node")
     return workflow
@@ -145,6 +152,7 @@ if __name__ == "__main__":
     parser.add_argument("--end-date", type=str, help="End date (YYYY-MM-DD). Defaults to today")
     parser.add_argument("--show-reasoning", action="store_true", help="Show reasoning from each agent")
     parser.add_argument("--show-agent-graph", action="store_true", help="Show the agent graph")
+    parser.add_argument("--benchmark_against", type=str, default="VOO", help="Benchmark against which index/company ticker")
     parser.add_argument("--ollama", action="store_true", help="Use Ollama for local LLM inference")
 
     args = parser.parse_args()
@@ -295,7 +303,7 @@ if __name__ == "__main__":
     }
 
     # Run the hedge fund
-    result = run_hedge_fund(
+    result, final_state = run_hedge_fund(
         tickers=tickers,
         start_date=start_date,
         end_date=end_date,
@@ -304,5 +312,7 @@ if __name__ == "__main__":
         selected_analysts=selected_analysts,
         model_name=model_choice,
         model_provider=model_provider,
+        benchmark=args.benchmark_against,
     )
     print_trading_output(result)
+    display_backtest_summary_table(result["backtest_results"], final_state["data"].get("backtest_summary"))

@@ -1,8 +1,10 @@
+import json
+import os
+
 from colorama import Fore, Style
 from tabulate import tabulate
+
 from .analysts import ANALYST_ORDER
-import os
-import json
 
 
 def sort_agent_signals(signals):
@@ -36,7 +38,7 @@ def print_trading_output(result: dict) -> None:
         for agent, signals in result.get("analyst_signals", {}).items():
             if ticker not in signals:
                 continue
-                
+
             # Skip Risk Management agent in the signals section
             if agent == "risk_management_agent":
                 continue
@@ -51,12 +53,12 @@ def print_trading_output(result: dict) -> None:
                 "BEARISH": Fore.RED,
                 "NEUTRAL": Fore.YELLOW,
             }.get(signal_type, Fore.WHITE)
-            
+
             # Get reasoning if available
             reasoning_str = ""
             if "reasoning" in signal and signal["reasoning"]:
                 reasoning = signal["reasoning"]
-                
+
                 # Handle different types of reasoning (string, dict, etc.)
                 if isinstance(reasoning, str):
                     reasoning_str = reasoning
@@ -66,7 +68,7 @@ def print_trading_output(result: dict) -> None:
                 else:
                     # Convert any other type to string
                     reasoning_str = str(reasoning)
-                
+
                 # Wrap long reasoning text to make it more readable
                 wrapped_reasoning = ""
                 current_line = ""
@@ -83,7 +85,7 @@ def print_trading_output(result: dict) -> None:
                             current_line = word
                 if current_line:
                     wrapped_reasoning += current_line
-                
+
                 reasoning_str = wrapped_reasoning
 
             table_data.append(
@@ -147,21 +149,21 @@ def print_trading_output(result: dict) -> None:
             ],
             ["Reasoning", f"{Fore.WHITE}{wrapped_reasoning}{Style.RESET_ALL}"],
         ]
-        
+
         print(f"\n{Fore.WHITE}{Style.BRIGHT}TRADING DECISION:{Style.RESET_ALL} [{Fore.CYAN}{ticker}{Style.RESET_ALL}]")
         print(tabulate(decision_data, tablefmt="grid", colalign=("left", "left")))
 
     # Print Portfolio Summary
     print(f"\n{Fore.WHITE}{Style.BRIGHT}PORTFOLIO SUMMARY:{Style.RESET_ALL}")
     portfolio_data = []
-    
+
     # Extract portfolio manager reasoning (common for all tickers)
     portfolio_manager_reasoning = None
     for ticker, decision in decisions.items():
         if decision.get("reasoning"):
             portfolio_manager_reasoning = decision.get("reasoning")
             break
-            
+
     for ticker, decision in decisions.items():
         action = decision.get("action", "").upper()
         action_color = {
@@ -181,7 +183,7 @@ def print_trading_output(result: dict) -> None:
         )
 
     headers = [f"{Fore.WHITE}Ticker", "Action", "Quantity", "Confidence"]
-    
+
     # Print the portfolio summary table
     print(
         tabulate(
@@ -191,7 +193,7 @@ def print_trading_output(result: dict) -> None:
             colalign=("left", "center", "right", "right"),
         )
     )
-    
+
     # Print Portfolio Manager's reasoning if available
     if portfolio_manager_reasoning:
         # Handle different types of reasoning (string, dict, etc.)
@@ -204,7 +206,7 @@ def print_trading_output(result: dict) -> None:
         else:
             # Convert any other type to string
             reasoning_str = str(portfolio_manager_reasoning)
-            
+
         # Wrap long reasoning text to make it more readable
         wrapped_reasoning = ""
         current_line = ""
@@ -221,7 +223,7 @@ def print_trading_output(result: dict) -> None:
                     current_line = word
         if current_line:
             wrapped_reasoning += current_line
-            
+
         print(f"\n{Fore.WHITE}{Style.BRIGHT}Portfolio Strategy:{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{wrapped_reasoning}{Style.RESET_ALL}")
 
@@ -241,7 +243,6 @@ def print_backtest_results(table_rows: list) -> None:
         else:
             ticker_rows.append(row)
 
-    
     # Display latest portfolio summary
     if summary_rows:
         latest_summary = summary_rows[-1]
@@ -256,7 +257,7 @@ def print_backtest_results(table_rows: list) -> None:
         print(f"Total Position Value: {Fore.YELLOW}${float(position_str):,.2f}{Style.RESET_ALL}")
         print(f"Total Value: {Fore.WHITE}${float(total_str):,.2f}{Style.RESET_ALL}")
         print(f"Return: {latest_summary[9]}")
-        
+
         # Display performance metrics if available
         if latest_summary[10]:  # Sharpe ratio
             print(f"Sharpe Ratio: {latest_summary[10]}")
@@ -364,3 +365,89 @@ def format_backtest_row(
             f"{Fore.RED}{bearish_count}{Style.RESET_ALL}",
             f"{Fore.BLUE}{neutral_count}{Style.RESET_ALL}",
         ]
+
+
+def display_backtest_summary_table(results, backtest_summary):
+    """
+    Display backtest summary in a nicely formatted table
+
+    Args:
+        results: Dictionary containing backtest results for different time horizons
+    """
+    # Create tables with tabulate
+    import pandas as pd
+    from tabulate import tabulate
+
+    if results is not None and isinstance(results, dict):
+        # Prepare data for the tables
+        portfolio_data = []
+        benchmark_data = []
+
+        # Get all metrics for consistent column headers
+        all_portfolio_metrics = set()
+        all_benchmark_metrics = set()
+        for metrics in results.values():
+            all_portfolio_metrics.update(metrics["Portfolio"].keys())
+            all_benchmark_metrics.update(metrics["Benchmark"].keys())
+
+        # Sort metrics for consistent order
+        all_portfolio_metrics = sorted(all_portfolio_metrics)
+        all_benchmark_metrics = sorted(all_benchmark_metrics)
+
+        # Prepare portfolio table data
+        portfolio_headers = ["Horizon"] + [f"{Fore.WHITE}{metric}" for metric in all_portfolio_metrics]
+        for horizon, metrics in results.items():
+            row = [f"{Fore.CYAN}{horizon}{Style.RESET_ALL}"]
+            for metric in all_portfolio_metrics:
+                if metric in metrics["Portfolio"]:
+                    value = metrics["Portfolio"][metric]
+                    # Color based on positive/negative values
+                    color = Fore.GREEN if value >= 0 else Fore.RED
+                    row.append(f"{color}{value:.2%}{Style.RESET_ALL}")
+                else:
+                    row.append("")
+            portfolio_data.append(row)
+
+        # Prepare benchmark table data
+        benchmark_headers = ["Horizon"] + [f"{Fore.WHITE}{metric}" for metric in all_benchmark_metrics]
+        for horizon, metrics in results.items():
+            row = [f"{Fore.CYAN}{horizon}{Style.RESET_ALL}"]
+            for metric in all_benchmark_metrics:
+                if metric in metrics["Benchmark"]:
+                    value = metrics["Benchmark"][metric]
+                    color = Fore.GREEN if value >= 0 else Fore.RED
+                    row.append(f"{color}{value:.2%}{Style.RESET_ALL}")
+                else:
+                    row.append("")
+            benchmark_data.append(row)
+
+        # Calculate outperformance
+        outperform_data = []
+        common_metrics = [m for m in all_portfolio_metrics if m in all_benchmark_metrics]
+        outperform_headers = ["Horizon"] + [f"{Fore.WHITE}{metric}" for metric in common_metrics]
+
+        for horizon, metrics in results.items():
+            row = [f"{Fore.CYAN}{horizon}{Style.RESET_ALL}"]
+            for metric in common_metrics:
+                if metric in metrics["Portfolio"] and metric in metrics["Benchmark"]:
+                    p_val = metrics["Portfolio"][metric]
+                    b_val = metrics["Benchmark"][metric]
+                    diff = p_val - b_val
+                    color = Fore.GREEN if diff >= 0 else Fore.RED
+                    row.append(f"{color}{diff:.2%}{Style.RESET_ALL}")
+                else:
+                    row.append("N/A")
+            outperform_data.append(row)
+
+        # Print tables with grid formatting
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}PORTFOLIO PERFORMANCE:{Style.RESET_ALL}")
+        print(tabulate(portfolio_data, headers=portfolio_headers, tablefmt="grid"))
+
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}BENCHMARK PERFORMANCE:{Style.RESET_ALL}")
+        print(tabulate(benchmark_data, headers=benchmark_headers, tablefmt="grid"))
+
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}OUTPERFORMANCE (PORTFOLIO VS BENCHMARK):{Style.RESET_ALL}")
+        print(tabulate(outperform_data, headers=outperform_headers, tablefmt="grid"))
+
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}Comparison Summary:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{backtest_summary}{Style.RESET_ALL}")

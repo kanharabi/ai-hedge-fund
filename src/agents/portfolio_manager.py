@@ -1,12 +1,13 @@
 import json
+
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-
-from src.graph.state import AgentState, show_agent_reasoning
 from pydantic import BaseModel, Field
 from typing_extensions import Literal
-from src.utils.progress import progress
+
+from src.graph.state import AgentState, show_agent_reasoning
 from src.utils.llm import call_llm
+from src.utils.progress import progress
 
 
 class PortfolioDecision(BaseModel):
@@ -14,6 +15,7 @@ class PortfolioDecision(BaseModel):
     quantity: int = Field(description="Number of shares to trade")
     confidence: float = Field(description="Confidence in the decision, between 0.0 and 100.0")
     reasoning: str = Field(description="Reasoning for the decision")
+    current_pricing: float = Field(description="Current price of the stock")
 
 
 class PortfolioManagerOutput(BaseModel):
@@ -73,6 +75,8 @@ def portfolio_management_agent(state: AgentState):
         content=json.dumps({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}),
         name="portfolio_manager",
     )
+
+    state["data"]["analyst_signals"]["portfolio_manager_summary"] = result
 
     # Print the decision if the flag is set
     if state["metadata"]["show_reasoning"]:
@@ -161,6 +165,7 @@ def generate_trading_decision(
                     "quantity": integer,
                     "confidence": float between 0 and 100,
                     "reasoning": "string"
+                    "current_pricing":"Current price of the stock float"
                   }},
                   "TICKER2": {{
                     ...
@@ -188,6 +193,6 @@ def generate_trading_decision(
 
     # Create default factory for PortfolioManagerOutput
     def create_default_portfolio_output():
-        return PortfolioManagerOutput(decisions={ticker: PortfolioDecision(action="hold", quantity=0, confidence=0.0, reasoning="Error in portfolio management, defaulting to hold") for ticker in tickers})
+        return PortfolioManagerOutput(decisions={ticker: PortfolioDecision(action="hold", quantity=0, confidence=0.0, current_pricing=0.0, reasoning="Error in portfolio management, defaulting to hold") for ticker in tickers})
 
     return call_llm(prompt=prompt, model_name=model_name, model_provider=model_provider, pydantic_model=PortfolioManagerOutput, agent_name="portfolio_manager", default_factory=create_default_portfolio_output)

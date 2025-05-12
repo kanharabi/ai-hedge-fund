@@ -1,13 +1,14 @@
 import os
+from enum import Enum
+from typing import Tuple
+
 from langchain_anthropic import ChatAnthropic
 from langchain_deepseek import ChatDeepSeek
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
-from enum import Enum
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from pydantic import BaseModel
-from typing import Tuple
 
 
 class ModelProvider(str, Enum):
@@ -19,6 +20,7 @@ class ModelProvider(str, Enum):
     GROQ = "Groq"
     OPENAI = "OpenAI"
     OLLAMA = "Ollama"
+    AZURE = "Azure"
 
 
 class LLMModel(BaseModel):
@@ -56,19 +58,23 @@ class LLMModel(BaseModel):
 
 # Define available models
 AVAILABLE_MODELS = [
-    LLMModel(display_name="[anthropic] claude-3.5-haiku", model_name="claude-3-5-haiku-latest", provider=ModelProvider.ANTHROPIC),
-    LLMModel(display_name="[anthropic] claude-3.5-sonnet", model_name="claude-3-5-sonnet-latest", provider=ModelProvider.ANTHROPIC),
-    LLMModel(display_name="[anthropic] claude-3.7-sonnet", model_name="claude-3-7-sonnet-latest", provider=ModelProvider.ANTHROPIC),
-    LLMModel(display_name="[deepseek] deepseek-r1", model_name="deepseek-reasoner", provider=ModelProvider.DEEPSEEK),
-    LLMModel(display_name="[deepseek] deepseek-v3", model_name="deepseek-chat", provider=ModelProvider.DEEPSEEK),
-    LLMModel(display_name="[gemini] gemini-2.0-flash", model_name="gemini-2.0-flash", provider=ModelProvider.GEMINI),
-    LLMModel(display_name="[gemini] gemini-2.5-pro", model_name="gemini-2.5-pro-exp-03-25", provider=ModelProvider.GEMINI),
-    LLMModel(display_name="[groq] llama-4-scout-17b", model_name="meta-llama/llama-4-scout-17b-16e-instruct", provider=ModelProvider.GROQ),
-    LLMModel(display_name="[groq] llama-4-maverick-17b", model_name="meta-llama/llama-4-maverick-17b-128e-instruct", provider=ModelProvider.GROQ),
-    LLMModel(display_name="[openai] gpt-4.5", model_name="gpt-4.5-preview", provider=ModelProvider.OPENAI),
-    LLMModel(display_name="[openai] gpt-4o", model_name="gpt-4o", provider=ModelProvider.OPENAI),
-    LLMModel(display_name="[openai] o3", model_name="o3", provider=ModelProvider.OPENAI),
-    LLMModel(display_name="[openai] o4-mini", model_name="o4-mini", provider=ModelProvider.OPENAI),
+    # LLMModel(display_name="[anthropic] claude-3.5-haiku", model_name="claude-3-5-haiku-latest", provider=ModelProvider.ANTHROPIC),
+    # LLMModel(display_name="[anthropic] claude-3.5-sonnet", model_name="claude-3-5-sonnet-latest", provider=ModelProvider.ANTHROPIC),
+    # LLMModel(display_name="[anthropic] claude-3.7-sonnet", model_name="claude-3-7-sonnet-latest", provider=ModelProvider.ANTHROPIC),
+    # LLMModel(display_name="[deepseek] deepseek-r1", model_name="deepseek-reasoner", provider=ModelProvider.DEEPSEEK),
+    # LLMModel(display_name="[deepseek] deepseek-v3", model_name="deepseek-chat", provider=ModelProvider.DEEPSEEK),
+    # LLMModel(display_name="[gemini] gemini-2.0-flash", model_name="gemini-2.0-flash", provider=ModelProvider.GEMINI),
+    # LLMModel(display_name="[gemini] gemini-2.5-pro", model_name="gemini-2.5-pro-exp-03-25", provider=ModelProvider.GEMINI),
+    # LLMModel(display_name="[groq] llama-4-scout-17b", model_name="meta-llama/llama-4-scout-17b-16e-instruct", provider=ModelProvider.GROQ),
+    # LLMModel(display_name="[groq] llama-4-maverick-17b", model_name="meta-llama/llama-4-maverick-17b-128e-instruct", provider=ModelProvider.GROQ),
+    # LLMModel(display_name="[openai] gpt-4.1", model_name="gpt-4.1", provider=ModelProvider.OPENAI),
+    # # LLMModel(display_name="[openai] gpt-4o", model_name="gpt-4o", provider=ModelProvider.OPENAI),
+    # LLMModel(display_name="[openai] o3-mini", model_name="o3-mini", provider=ModelProvider.OPENAI),
+    # LLMModel(display_name="[openai] DeepSeek-V3", model_name="DeepSeek-V3", provider=ModelProvider.OPENAI),
+    LLMModel(display_name="[openai] gpt-4.1", model_name="gpt-4.1", provider=ModelProvider.AZURE),
+    # LLMModel(display_name="[openai] gpt-4o", model_name="gpt-4o", provider=ModelProvider.AzURE),
+    LLMModel(display_name="[openai] o3-mini", model_name="o3-mini", provider=ModelProvider.AZURE),
+    LLMModel(display_name="[openai] DeepSeek-V3", model_name="DeepSeek-V3", provider=ModelProvider.AZURE),
 ]
 
 # Define Ollama models separately
@@ -96,7 +102,7 @@ def get_model_info(model_name: str) -> LLMModel | None:
     return next((model for model in all_models if model.model_name == model_name), None)
 
 
-def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | ChatOllama | None:
+def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | ChatOllama | AzureChatOpenAI | None:
     if model_provider == ModelProvider.GROQ:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -138,4 +144,19 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
         return ChatOllama(
             model=model_name,
             base_url=base_url,
+        )
+    elif model_provider == ModelProvider.AZURE:
+        # Get and validate API key
+        api_key = os.getenv("AZURE_API_KEY")
+        endpoint = os.getenv("AZURE_ENDPOINT")
+        version = os.getenv("AZURE_API_VERSION") or "2025-01-01-preview"
+        if not api_key or not endpoint:
+            # Print error to console
+            print(f"API Key Error: Please make sure AZURE_API_KEY and AZURE_ENDPOINT are set in your .env file.")
+            raise ValueError("Azure API key or endpoint not found.  Please make sure AZURE_API_KEY and AZURE_ENDPOINT are set in your .env file.")
+        return AzureChatOpenAI(
+            azure_endpoint=endpoint,
+            api_version=version,
+            api_key=api_key,
+            azure_deployment="gpt-4.1",
         )
