@@ -1,12 +1,14 @@
+import json
+
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
+from typing_extensions import Literal
+
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
-import json
-from typing_extensions import Literal
-from src.utils.progress import progress
 from src.utils.llm import call_llm
+from src.utils.progress import progress
 
 
 class CathieWoodSignal(BaseModel):
@@ -26,6 +28,7 @@ def cathie_wood_agent(state: AgentState):
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+    news = data["news_analysis"]
 
     analysis_data = {}
     cw_analysis = {}
@@ -88,6 +91,7 @@ def cathie_wood_agent(state: AgentState):
             analysis_data=analysis_data,
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
+            news=news[ticker] if news and ticker in news else None,
         )
 
         cw_analysis[ticker] = {"signal": cw_output.signal, "confidence": cw_output.confidence, "reasoning": cw_output.reasoning}
@@ -361,6 +365,7 @@ def generate_cathie_wood_output(
     analysis_data: dict[str, any],
     model_name: str,
     model_provider: str,
+    news: str | None = None,
 ) -> CathieWoodSignal:
     """
     Generates investment decisions in the style of Cathie Wood.
@@ -393,6 +398,8 @@ def generate_cathie_wood_output(
             5. Addressing R&D investment and innovation pipeline that could drive future growth
             6. Using Cathie Wood's optimistic, future-focused, and conviction-driven voice
             
+            Also consider the latest news summary for the ticker, if available.
+            
             For example, if bullish: "The company's AI-driven platform is transforming the $500B healthcare analytics market, with evidence of platform adoption accelerating from 40% to 65% YoY. Their R&D investments of 22% of revenue are creating a technological moat that positions them to capture a significant share of this expanding market. The current valuation doesn't reflect the exponential growth trajectory we expect as..."
             For example, if bearish: "While operating in the genomics space, the company lacks truly disruptive technology and is merely incrementally improving existing techniques. R&D spending at only 8% of revenue signals insufficient investment in breakthrough innovation. With revenue growth slowing from 45% to 20% YoY, there's limited evidence of the exponential adoption curve we look for in transformative companies..."
             """,
@@ -403,6 +410,9 @@ def generate_cathie_wood_output(
 
             Analysis Data for {ticker}:
             {analysis_data}
+            
+            News Summary:
+            {news}
 
             Return the trading signal in this JSON format:
             {{
@@ -415,7 +425,7 @@ def generate_cathie_wood_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker, "news": f"{news.summary} \nPotential impact: {news.potential_impact}"})
 
     def create_default_cathie_wood_signal():
         return CathieWoodSignal(signal="neutral", confidence=0.0, reasoning="Error in analysis, defaulting to neutral")

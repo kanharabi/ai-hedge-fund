@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
 from src.agents.backtester import backtester_agent
+from src.agents.news_agent import news_agent
 from src.agents.portfolio_manager import portfolio_management_agent
 from src.agents.risk_manager import risk_management_agent
 from src.graph.state import AgentState
@@ -109,6 +110,10 @@ def create_workflow(selected_analysts=None):
     workflow = StateGraph(AgentState)
     workflow.add_node("start_node", start)
 
+    # Add news agent
+    workflow.add_node("news_agent", news_agent)
+    workflow.add_edge("start_node", "news_agent")
+
     # Get analyst nodes from the configuration
     analyst_nodes = get_analyst_nodes()
 
@@ -119,7 +124,7 @@ def create_workflow(selected_analysts=None):
     for analyst_key in selected_analysts:
         node_name, node_func = analyst_nodes[analyst_key]
         workflow.add_node(node_name, node_func)
-        workflow.add_edge("start_node", node_name)
+        workflow.add_edge("news_agent", node_name)
 
     # Always add risk and portfolio management
     workflow.add_node("risk_management_agent", risk_management_agent)

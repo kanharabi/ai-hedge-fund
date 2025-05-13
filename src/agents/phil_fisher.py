@@ -1,19 +1,21 @@
+import json
+import statistics
+
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
+from typing_extensions import Literal
+
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.api import (
+    get_company_news,
     get_financial_metrics,
+    get_insider_trades,
     get_market_cap,
     search_line_items,
-    get_insider_trades,
-    get_company_news,
 )
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
-import json
-from typing_extensions import Literal
-from src.utils.progress import progress
 from src.utils.llm import call_llm
-import statistics
+from src.utils.progress import progress
 
 
 class PhilFisherSignal(BaseModel):
@@ -38,6 +40,7 @@ def phil_fisher_agent(state: AgentState):
     start_date = data["start_date"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+    news = data["news_analysis"]
 
     analysis_data = {}
     fisher_analysis = {}
@@ -108,14 +111,7 @@ def phil_fisher_agent(state: AgentState):
         #   15% Valuation
         #   5% Insider Activity
         #   5% Sentiment
-        total_score = (
-            growth_quality["score"] * 0.30
-            + margins_stability["score"] * 0.25
-            + mgmt_efficiency["score"] * 0.20
-            + fisher_valuation["score"] * 0.15
-            + insider_activity["score"] * 0.05
-            + sentiment_analysis["score"] * 0.05
-        )
+        total_score = growth_quality["score"] * 0.30 + margins_stability["score"] * 0.25 + mgmt_efficiency["score"] * 0.20 + fisher_valuation["score"] * 0.15 + insider_activity["score"] * 0.05 + sentiment_analysis["score"] * 0.05
 
         max_possible_score = 10
 
@@ -145,6 +141,7 @@ def phil_fisher_agent(state: AgentState):
             analysis_data=analysis_data,
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
+            news=news[ticker] if news and ticker in news else None,
         )
 
         fisher_analysis[ticker] = {
@@ -530,6 +527,7 @@ def generate_fisher_output(
     analysis_data: dict[str, any],
     model_name: str,
     model_provider: str,
+    news: str | None = None,
 ) -> PhilFisherSignal:
     """
     Generates a JSON signal in the style of Phil Fisher.
@@ -537,8 +535,8 @@ def generate_fisher_output(
     template = ChatPromptTemplate.from_messages(
         [
             (
-              "system",
-              """You are a Phil Fisher AI agent, making investment decisions using his principles:
+                "system",
+                """You are a Phil Fisher AI agent, making investment decisions using his principles:
   
               1. Emphasize long-term growth potential and quality of management.
               2. Focus on companies investing in R&D for future products/services.
@@ -554,6 +552,8 @@ def generate_fisher_output(
               5. Explaining competitive advantages that could sustain growth over 3-5+ years
               6. Using Phil Fisher's methodical, growth-focused, and long-term oriented voice
               
+              Also consider the latest news summary for the ticker, if available.
+              
               For example, if bullish: "This company exhibits the sustained growth characteristics we seek, with revenue increasing at 18% annually over five years. Management has demonstrated exceptional foresight by allocating 15% of revenue to R&D, which has produced three promising new product lines. The consistent operating margins of 22-24% indicate pricing power and operational efficiency that should continue to..."
               
               For example, if bearish: "Despite operating in a growing industry, management has failed to translate R&D investments (only 5% of revenue) into meaningful new products. Margins have fluctuated between 10-15%, showing inconsistent operational execution. The company faces increasing competition from three larger competitors with superior distribution networks. Given these concerns about long-term growth sustainability..."
@@ -565,11 +565,14 @@ def generate_fisher_output(
               """,
             ),
             (
-              "human",
-              """Based on the following analysis, create a Phil Fisher-style investment signal.
+                "human",
+                """Based on the following analysis, create a Phil Fisher-style investment signal.
 
               Analysis Data for {ticker}:
               {analysis_data}
+              
+                News Summary:
+                {news}
 
               Return the trading signal in this JSON format:
               {{
@@ -582,14 +585,10 @@ def generate_fisher_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker, "news": f"{news.summary} \nPotential impact: {news.potential_impact}"})
 
     def create_default_signal():
-        return PhilFisherSignal(
-            signal="neutral",
-            confidence=0.0,
-            reasoning="Error in analysis, defaulting to neutral"
-        )
+        return PhilFisherSignal(signal="neutral", confidence=0.0, reasoning="Error in analysis, defaulting to neutral")
 
     return call_llm(
         prompt=prompt,

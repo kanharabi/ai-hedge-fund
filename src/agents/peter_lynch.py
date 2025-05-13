@@ -1,25 +1,28 @@
+import json
+
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
+from typing_extensions import Literal
+
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.api import (
-    get_financial_metrics,
-    get_market_cap,
-    search_line_items,
-    get_insider_trades,
     get_company_news,
+    get_financial_metrics,
+    get_insider_trades,
+    get_market_cap,
     get_prices,
+    search_line_items,
 )
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
-import json
-from typing_extensions import Literal
-from src.utils.progress import progress
 from src.utils.llm import call_llm
+from src.utils.progress import progress
 
 
 class PeterLynchSignal(BaseModel):
     """
     Container for the Peter Lynch-style output signal.
     """
+
     signal: Literal["bullish", "bearish", "neutral"]
     confidence: float
     reasoning: str
@@ -44,6 +47,7 @@ def peter_lynch_agent(state: AgentState):
     start_date = data["start_date"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+    news = data["news_analysis"]
 
     analysis_data = {}
     lynch_analysis = {}
@@ -106,13 +110,7 @@ def peter_lynch_agent(state: AgentState):
         # Combine partial scores with weights typical for Peter Lynch:
         #   30% Growth, 25% Valuation, 20% Fundamentals,
         #   15% Sentiment, 10% Insider Activity = 100%
-        total_score = (
-            growth_analysis["score"] * 0.30
-            + valuation_analysis["score"] * 0.25
-            + fundamentals_analysis["score"] * 0.20
-            + sentiment_analysis["score"] * 0.15
-            + insider_activity["score"] * 0.10
-        )
+        total_score = growth_analysis["score"] * 0.30 + valuation_analysis["score"] * 0.25 + fundamentals_analysis["score"] * 0.20 + sentiment_analysis["score"] * 0.15 + insider_activity["score"] * 0.10
 
         max_possible_score = 10.0
 
@@ -141,6 +139,7 @@ def peter_lynch_agent(state: AgentState):
             analysis_data=analysis_data[ticker],
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
+            news=news[ticker] if news and ticker in news else None,
         )
 
         lynch_analysis[ticker] = {
@@ -441,6 +440,7 @@ def generate_lynch_output(
     analysis_data: dict[str, any],
     model_name: str,
     model_provider: str,
+    news: str | None = None,
 ) -> PeterLynchSignal:
     """
     Generates a final JSON signal in Peter Lynch's voice & style.
@@ -457,6 +457,8 @@ def generate_lynch_output(
                 4. Steady Growth: Prefer consistent revenue/earnings expansion, less concern about short-term noise.
                 5. Avoid High Debt: Watch for dangerous leverage.
                 6. Management & Story: A good 'story' behind the stock, but not overhyped or too complex.
+                
+                Also consider the latest news summary for the ticker, if available.
                 
                 When you provide your reasoning, do it in Peter Lynch's voice:
                 - Cite the PEG ratio
@@ -480,6 +482,9 @@ def generate_lynch_output(
 
                 Analysis Data:
                 {analysis_data}
+                
+                News Summary:
+                {news}
 
                 Return only valid JSON with "signal", "confidence", and "reasoning".
                 """,
@@ -487,14 +492,10 @@ def generate_lynch_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker, "news": f"{news.summary} \nPotential impact: {news.potential_impact}"})
 
     def create_default_signal():
-        return PeterLynchSignal(
-            signal="neutral",
-            confidence=0.0,
-            reasoning="Error in analysis; defaulting to neutral"
-        )
+        return PeterLynchSignal(signal="neutral", confidence=0.0, reasoning="Error in analysis; defaulting to neutral")
 
     return call_llm(
         prompt=prompt,

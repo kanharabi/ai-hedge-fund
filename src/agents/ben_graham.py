@@ -1,13 +1,15 @@
+import json
+import math
+
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
+from typing_extensions import Literal
+
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
-import json
-from typing_extensions import Literal
-from src.utils.progress import progress
 from src.utils.llm import call_llm
-import math
+from src.utils.progress import progress
 
 
 class BenGrahamSignal(BaseModel):
@@ -27,6 +29,7 @@ def ben_graham_agent(state: AgentState):
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+    news = data["news_analysis"]
 
     analysis_data = {}
     graham_analysis = {}
@@ -71,6 +74,7 @@ def ben_graham_agent(state: AgentState):
             analysis_data=analysis_data,
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
+            news=news[ticker] if news and ticker in news else None,
         )
 
         graham_analysis[ticker] = {"signal": graham_output.signal, "confidence": graham_output.confidence, "reasoning": graham_output.reasoning}
@@ -280,6 +284,7 @@ def generate_graham_output(
     analysis_data: dict[str, any],
     model_name: str,
     model_provider: str,
+    news: str | None = None,
 ) -> BenGrahamSignal:
     """
     Generates an investment decision in the style of Benjamin Graham:
@@ -306,6 +311,8 @@ def generate_graham_output(
             5. Comparing current metrics to Graham's specific thresholds (e.g., "Current ratio of 2.5 exceeds Graham's minimum of 2.0")
             6. Using Benjamin Graham's conservative, analytical voice and style in your explanation
             
+            Also consider the latest news summary for the ticker, if available.
+            
             For example, if bullish: "The stock trades at a 35% discount to net current asset value, providing an ample margin of safety. The current ratio of 2.5 and debt-to-equity of 0.3 indicate strong financial position..."
             For example, if bearish: "Despite consistent earnings, the current price of $50 exceeds our calculated Graham Number of $35, offering no margin of safety. Additionally, the current ratio of only 1.2 falls below Graham's preferred 2.0 threshold..."
                         
@@ -318,7 +325,10 @@ def generate_graham_output(
 
             Analysis Data for {ticker}:
             {analysis_data}
-
+            
+            News Summary:
+            {news}
+            
             Return JSON exactly in this format:
             {{
               "signal": "bullish" or "bearish" or "neutral",
@@ -330,7 +340,7 @@ def generate_graham_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker, "news": f"{news.summary} \nPotential impact: {news.potential_impact}"})
 
     def create_default_ben_graham_signal():
         return BenGrahamSignal(signal="neutral", confidence=0.0, reasoning="Error in generating analysis; defaulting to neutral.")

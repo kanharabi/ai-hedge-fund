@@ -1,9 +1,11 @@
-from src.graph.state import AgentState, show_agent_reasoning
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
 import json
+
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
 from typing_extensions import Literal
+
+from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.api import get_financial_metrics, get_market_cap, search_line_items
 from src.utils.llm import call_llm
 from src.utils.progress import progress
@@ -20,6 +22,7 @@ def warren_buffett_agent(state: AgentState):
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
+    news = data["news_analysis"]
 
     # Collect all analysis for LLM reasoning
     analysis_data = {}
@@ -110,6 +113,7 @@ def warren_buffett_agent(state: AgentState):
             analysis_data=analysis_data,
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
+            news=news[ticker] if news and ticker in news else None,
         )
 
         # Store analysis in consistent format with other agents
@@ -387,6 +391,7 @@ def generate_buffett_output(
     analysis_data: dict[str, any],
     model_name: str,
     model_provider: str,
+    news: str | None = None,
 ) -> WarrenBuffettSignal:
     """Get investment decision from LLM with Buffett's principles"""
     template = ChatPromptTemplate.from_messages(
@@ -408,6 +413,8 @@ def generate_buffett_output(
                 3. Providing quantitative evidence where relevant (e.g., specific margins, ROE values, debt levels)
                 4. Concluding with a Buffett-style assessment of the investment opportunity
                 5. Using Warren Buffett's voice and conversational style in your explanation
+                
+                Also consider the latest news summary for the ticker, if available.
 
                 For example, if bullish: "I'm particularly impressed with [specific strength], reminiscent of our early investment in See's Candies where we saw [similar attribute]..."
                 For example, if bearish: "The declining returns on capital remind me of the textile operations at Berkshire that we eventually exited because..."
@@ -421,6 +428,9 @@ def generate_buffett_output(
 
                 Analysis Data for {ticker}:
                 {analysis_data}
+                
+                News Summary:
+                {news}
 
                 Return the trading signal in the following JSON format exactly:
                 {{
@@ -433,7 +443,7 @@ def generate_buffett_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker, "news": f"{news.summary} \nPotential impact: {news.potential_impact}"})
 
     # Default fallback signal in case parsing fails
     def create_default_warren_buffett_signal():

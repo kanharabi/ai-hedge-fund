@@ -1,21 +1,22 @@
 import datetime
 import os
+
 import pandas as pd
 import requests
 
 from src.data.cache import get_cache
 from src.data.models import (
+    CompanyFactsResponse,
     CompanyNews,
     CompanyNewsResponse,
     FinancialMetrics,
     FinancialMetricsResponse,
-    Price,
-    PriceResponse,
-    LineItem,
-    LineItemResponse,
     InsiderTrade,
     InsiderTradeResponse,
-    CompanyFactsResponse,
+    LineItem,
+    LineItemResponse,
+    Price,
+    PriceResponse,
 )
 
 # Global cache instance
@@ -192,6 +193,7 @@ def get_company_news(
     end_date: str,
     start_date: str | None = None,
     limit: int = 1000,
+    get_all_news=True,
 ) -> list[CompanyNews]:
     """Fetch company news from cache or API."""
     # Check cache first
@@ -210,7 +212,7 @@ def get_company_news(
     all_news = []
     current_end_date = end_date
 
-    while True:
+    while get_all_news:
         url = f"https://api.financialdatasets.ai/news/?ticker={ticker}&end_date={current_end_date}"
         if start_date:
             url += f"&start_date={start_date}"
@@ -240,6 +242,22 @@ def get_company_news(
         if current_end_date <= start_date:
             break
 
+    if not get_all_news:
+        url = f"https://api.financialdatasets.ai/news/?ticker={ticker}&end_date={current_end_date}"
+        if start_date:
+            url += f"&start_date={start_date}"
+        url += f"&limit={limit}"
+
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+
+        data = response.json()
+        response_model = CompanyNewsResponse(**data)
+        company_news = response_model.news
+
+        all_news.extend(company_news)
+
     if not all_news:
         return []
 
@@ -255,19 +273,7 @@ def get_market_cap(
     """Fetch market cap from the API."""
     # Check if end_date is today
     if end_date == datetime.datetime.now().strftime("%Y-%m-%d"):
-        # Get the market cap from company facts API
-        headers = {}
-        if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-            headers["X-API-KEY"] = api_key
-
-        url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            print(f"Error fetching company facts: {ticker} - {response.status_code}")
-            return None
-
-        data = response.json()
-        response_model = CompanyFactsResponse(**data)
+        response_model = get_company_facts(ticker)
         return response_model.company_facts.market_cap
 
     financial_metrics = get_financial_metrics(ticker, end_date)
@@ -298,3 +304,19 @@ def prices_to_df(prices: list[Price]) -> pd.DataFrame:
 def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
     prices = get_prices(ticker, start_date, end_date)
     return prices_to_df(prices)
+
+
+def get_company_facts(ticker: str) -> CompanyFactsResponse:
+    """Fetch company facts from the API."""
+    headers = {}
+    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
+        headers["X-API-KEY"] = api_key
+
+    url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"Error fetching company facts: {ticker} - {response.status_code} - {response.text}")
+
+    data = response.json()
+    response_model = CompanyFactsResponse(**data)
+    return response_model
