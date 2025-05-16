@@ -158,5 +158,5 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
             azure_endpoint=endpoint,
             api_version=version,
             api_key=api_key,
-            azure_deployment="gpt-4.1",
+            azure_deployment=model_name,
         )
