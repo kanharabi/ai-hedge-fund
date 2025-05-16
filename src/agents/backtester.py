@@ -20,7 +20,7 @@ class BackTestSummary(BaseModel):
 
 
 class Backtester:
-    def __init__(self, portfolio: Dict[str, float], benchmark: str = "^GSPC"):
+    def __init__(self, portfolio: Dict[str, float], benchmark: str = "^GSPC", end_date: Optional[datetime] = None):
         """
         Initialize the Backtester
 
@@ -30,14 +30,49 @@ class Backtester:
         """
         self.portfolio = portfolio
         self.benchmark = benchmark
-        self.horizons = {"1Y": 365, "5Y": 1825, "YTD": (datetime.now() - datetime(datetime.now().year, 1, 1)).days}
+        self.horizons = {"1Y": 365, "2Y": 730, "5Y": 1825, "YTD": (datetime.now() - datetime(datetime.now().year, 1, 1)).days}
 
-    def fetch_historical_data(self, ticker: str, period: str = "5y") -> pd.DataFrame:
+        self.max_duration = "5Y"
+
+        if end_date and (datetime.now() - datetime.fromisoformat(end_date)).days > 3:
+            self.horizons = {"TILL_DATE": (datetime.now() - datetime.fromisoformat(end_date)).days}
+            self.start_from = datetime.fromisoformat(end_date).date()
+            self.end_date = datetime.now().date()
+            self.max_duration = f"{self.horizons.get('TILL_DATE', 3)}d"
+            temp = {}
+            if self.horizons.get("TILL_DATE", 3) > 365:
+                temp.update({"1Y": 365})
+            if self.horizons.get("TILL_DATE", 3) > 730:
+                temp.update({"2Y": 730})
+            if self.horizons.get("TILL_DATE", 3) > 1825:
+                temp.update({"5Y": 1825})
+            self.horizons = {**temp, **self.horizons}
+
+    def fetch_historical_data(self, ticker: str, period: str = None) -> pd.DataFrame:
         """
         Fetch historical price data for a given ticker
         """
+        if not period:
+            try:
+                if self.start_from and self.end_date:
+                    start = self.start_from
+                    end = self.end_date
+                    period = None
+                else:
+                    start = None
+                    end = None
+                    period = self.max_duration
+            except Exception as e:
+                start = None
+                end = None
+                period = self.max_duration
+        else:
+            start = None
+            end = None
+            period = self.max_duration
+
         try:
-            data = yf.download(ticker, period=period)
+            data = yf.download(ticker, start=start, end=end, period=period)
             return data[("Close", ticker)]
         except Exception as e:
             print(f"Error fetching data for {ticker}: {str(e)}")
@@ -59,7 +94,7 @@ class Backtester:
         if not portfolio_returns.empty:
             portfolio_returns = portfolio_returns.pct_change()
             portfolio_returns = (portfolio_returns * pd.Series(self.portfolio)).sum(axis=1)
-            portfolio_returns = portfolio_returns.dropna()
+            portfolio_returns = portfolio_returns.ffill().bfill()
             return portfolio_returns
         return pd.DataFrame()
 
@@ -69,7 +104,7 @@ class Backtester:
         """
         benchmark_data = self.fetch_historical_data(self.benchmark)
         if not benchmark_data.empty:
-            return benchmark_data.pct_change().fillna(0)
+            return benchmark_data.pct_change().ffill().bfill()
         return pd.DataFrame()
 
     def calculate_metrics(self, returns: pd.Series) -> Dict[str, float]:
@@ -81,9 +116,10 @@ class Backtester:
 
         metrics = {}
 
-        # Calculate CAGR
+        # Calculate CAGR (Compound Annual Growth Rate)
         years = (returns.index[-1] - returns.index[0]).days / 365
-        metrics["CAGR"] = (1 + returns.mean()) ** years - 1
+        cum_return = (1 + returns).prod() - 1  # Total cumulative return
+        metrics["CAGR"] = (1 + cum_return) ** (1 / years) - 1
 
         # Calculate volatility
         metrics["Volatility"] = returns.std() * np.sqrt(252)
@@ -142,16 +178,31 @@ class Backtester:
 
         # Calculate metrics for different horizons
         results = {}
-        for horizon, days in self.horizons.items():
-            end_date = datetime.combine(datetime.now().date(), datetime.min.time())
-            start_date = end_date - timedelta(days=days)
 
-            mask = (portfolio_returns.index >= start_date) & (portfolio_returns.index <= end_date)
+        if self.start_from and self.end_date and self.max_duration != "5Y":
+            for horizon, days in self.horizons.items():
 
-            portfolio_period = portfolio_returns[mask]
-            benchmark_period = benchmark_returns[mask]
+                start_date = datetime.combine(self.start_from, datetime.min.time())
+                end_date = start_date + timedelta(days=days)
 
-            results[horizon] = {"Portfolio": self.calculate_metrics(portfolio_period), "Benchmark": self.calculate_metrics(benchmark_period)}
+                mask = (portfolio_returns.index >= start_date) & (portfolio_returns.index <= end_date)
+
+                portfolio_period = portfolio_returns[mask]
+                benchmark_period = benchmark_returns[mask]
+
+                results[horizon] = {"Portfolio": self.calculate_metrics(portfolio_period), "Benchmark": self.calculate_metrics(benchmark_period)}
+
+        else:
+            for horizon, days in self.horizons.items():
+                end_date = datetime.combine(datetime.now().date(), datetime.min.time())
+                start_date = end_date - timedelta(days=days)
+
+                mask = (portfolio_returns.index >= start_date) & (portfolio_returns.index <= end_date)
+
+                portfolio_period = portfolio_returns[mask]
+                benchmark_period = benchmark_returns[mask]
+
+                results[horizon] = {"Portfolio": self.calculate_metrics(portfolio_period), "Benchmark": self.calculate_metrics(benchmark_period)}
 
         # Plot performance
         self.plot_performance(portfolio_returns, benchmark_returns)
@@ -210,6 +261,8 @@ def backtester_agent(state: AgentState):
     portfolio = {}
     total_portfolio_amount = 0
     benchmark = state.get("data", {}).get("benchmark", "VOO")
+    start_date = state["data"]["start_date"]
+    end_date = state["data"]["end_date"]
     # print(state)
 
     progress.update_status("backtester_agent", f"{state['data']['tickers']}", "Backtesting the portfolio with the benchmark stock/Index")
@@ -220,11 +273,14 @@ def backtester_agent(state: AgentState):
         quantity = decision.quantity
         current_position = current_portfolio.get(ticker, {}).get("reasoning", {}).get("current_position", 0.0)
         if decision.action == "short":
-            if current_position > 0:
+            if current_position > 0.0:
                 if current_position > decision.quantity:
                     quantity = current_position - decision.quantity
                 else:
                     quantity = 0
+            else:
+                quantity = 0
+            # quantity = current_position - decision.quantity
         elif decision.action == "buy":
             quantity = current_position + decision.quantity
         elif decision.action == "hold":
@@ -234,16 +290,18 @@ def backtester_agent(state: AgentState):
 
         total_holdings = decision.current_pricing * quantity
         portfolio[ticker] = total_holdings
-        total_portfolio_amount += total_holdings
+        total_portfolio_amount += abs(total_holdings)
 
     # Normalize portfolio weights
     if total_portfolio_amount > 0:
         for ticker in portfolio:
             portfolio[ticker] /= total_portfolio_amount
 
-        backtester = Backtester(portfolio, benchmark)
+        backtester = Backtester(portfolio, benchmark, end_date=end_date)
         results = backtester.run_backtest()
         state["data"]["backtest_results"] = results
+        state["data"]["final_position"] = portfolio
+        state["data"]["total_portfolio_amount"] = total_portfolio_amount
 
         # Summarize backtest results
         summary = backtester.summarize_results(results, state["metadata"]["model_name"], state["metadata"]["model_provider"])
@@ -260,5 +318,6 @@ if __name__ == "__main__":
     # Example portfolio (Apple, Microsoft, Amazon)
     portfolio = {"AAPL": 0.4, "MSFT": 0.3, "AMZN": 0.3}
 
-    backtester = Backtester(portfolio, benchmark="VOO")
-    backtester.run_backtest()
+    backtester = Backtester(portfolio, benchmark="VOO", end_date="2023-01-01")
+    results = backtester.run_backtest()
+    print("Backtest Results:")

@@ -48,7 +48,7 @@ def michael_burry_agent(state: AgentState):  # noqa: C901  (complexity is fine h
     data = state["data"]
     end_date: str = data["end_date"]  # YYYY‑MM‑DD
     tickers: list[str] = data["tickers"]
-    news = data["news_analysis"]
+    news_all = data["news_analysis"]
 
     # We look one year back for insider trades / news flow
     start_date = (datetime.fromisoformat(end_date) - timedelta(days=365)).date().isoformat()
@@ -136,7 +136,7 @@ def michael_burry_agent(state: AgentState):  # noqa: C901  (complexity is fine h
             analysis_data=analysis_data,
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
-            news=news[ticker] if news and ticker in news else None,
+            news=news_all[ticker] if news_all and ticker in news_all else None,
         )
 
         burry_analysis[ticker] = {

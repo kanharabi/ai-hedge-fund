@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 
@@ -17,13 +18,17 @@ from src.agents.risk_manager import risk_management_agent
 from src.graph.state import AgentState
 from src.llm.models import get_model_info, LLM_ORDER, ModelProvider, OLLAMA_LLM_ORDER
 from src.utils.analysts import ANALYST_ORDER, get_analyst_nodes
-from src.utils.display import display_backtest_summary_table, print_trading_output
+from src.utils.display import (
+    display_backtest_summary_table,
+    print_news_analysis,
+    print_trading_output,
+)
 from src.utils.ollama import ensure_ollama_and_model
 from src.utils.progress import progress
 from src.utils.visualize import save_graph_as_png
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(override=True)
 
 init(autoreset=True)
 
@@ -319,5 +324,9 @@ if __name__ == "__main__":
         model_provider=model_provider,
         benchmark=args.benchmark_against,
     )
+    if os.getenv("USE_NEWS_INSIGHTS", "false").lower() == "true":
+        print_news_analysis(final_state["data"].get("news_analysis"))
     print_trading_output(result)
+    print(f"\n\n{Fore.YELLOW}Final Portfolio ratio: {final_state["data"].get("final_position")}{Style.RESET_ALL}")
+    print(f"\n\n{Fore.YELLOW}Total portfolio amount: {final_state["data"].get("total_portfolio_amount")}{Style.RESET_ALL}")
     display_backtest_summary_table(result["backtest_results"], final_state["data"].get("backtest_summary"))

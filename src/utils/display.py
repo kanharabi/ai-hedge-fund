@@ -16,6 +16,78 @@ def sort_agent_signals(signals):
     return sorted(signals, key=lambda x: analyst_order.get(x[0], 999))
 
 
+def print_news_analysis(news_analysis: dict) -> None:
+    """
+    Print formatted news analysis results for multiple tickers.
+
+    Args:
+        news_analysis (dict): Dictionary mapping tickers to NewsAnalysisResult objects
+    """
+    if not news_analysis:
+        print(f"{Fore.RED}No news analysis available{Style.RESET_ALL}")
+        return
+
+    for ticker, analysis in news_analysis.items():
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}News Analysis for {Fore.CYAN}{ticker}{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}{Style.BRIGHT}{'=' * 60}{Style.RESET_ALL}")
+        
+        # Print summary
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}Summary:{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}{analysis.summary}{Style.RESET_ALL}")
+        
+        # Print key events
+        if analysis.key_events:
+            print(f"\n{Fore.WHITE}{Style.BRIGHT}Key Events:{Style.RESET_ALL}")
+            for i, event in enumerate(analysis.key_events, 1):
+                print(f"{Fore.CYAN}{i}. {Fore.WHITE}{event}{Style.RESET_ALL}")
+        
+        # Print potential impact
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}Potential Impact:{Style.RESET_ALL}")
+        # Color based on sentiment
+        impact_color = {
+            "positive": Fore.GREEN,
+            "negative": Fore.RED,
+            "neutral": Fore.YELLOW,
+            "mixed": Fore.MAGENTA
+        }.get(analysis.sentiment.lower(), Fore.WHITE)
+        print(f"{impact_color}{analysis.potential_impact}{Style.RESET_ALL}")
+        
+        # Print confidence if available
+        if hasattr(analysis, 'confidence') and analysis.confidence > 0:
+            print(f"\n{Fore.WHITE}{Style.BRIGHT}Confidence: {Fore.CYAN}{analysis.confidence:.1f}%{Style.RESET_ALL}")
+        
+        # Print relevant news articles in a table if available
+        if analysis.relevant_news:
+            print(f"\n{Fore.WHITE}{Style.BRIGHT}Relevant News Articles:{Style.RESET_ALL}")
+            
+            # Prepare table data
+            news_table = []
+            for news in analysis.relevant_news:
+                impact = news.get("potential_impact", "").lower()
+                impact_color = {
+                    "positive": Fore.GREEN,
+                    "negative": Fore.RED,
+                    "neutral": Fore.YELLOW,
+                    "mixed": Fore.MAGENTA
+                }.get(impact, Fore.WHITE)
+                
+                news_table.append([
+                    f"{Fore.CYAN}{news.get('date', 'N/A')}{Style.RESET_ALL}",
+                    f"{Fore.WHITE}{news.get('title', 'No title')}{Style.RESET_ALL}",
+                    f"{impact_color}{impact.upper()}{Style.RESET_ALL}"
+                ])
+            
+            # Print table
+            print(tabulate(
+                news_table,
+                headers=[f"{Fore.WHITE}Date", "Title", "Impact"],
+                tablefmt="grid",
+                colalign=("left", "left", "center")
+            ))
+        
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}{'=' * 60}{Style.RESET_ALL}")
+
+
 def print_trading_output(result: dict) -> None:
     """
     Print formatted trading results with colored tables for multiple tickers.
