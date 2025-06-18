@@ -47,6 +47,9 @@ class Backtester:
             if self.horizons.get("TILL_DATE", 3) > 1825:
                 temp.update({"5Y": 1825})
             self.horizons = {**temp, **self.horizons}
+        else:
+            self.start_from = None
+            self.end_date = None
 
     def fetch_historical_data(self, ticker: str, period: str = None) -> pd.DataFrame:
         """
@@ -320,4 +323,4 @@ if __name__ == "__main__":
 
     backtester = Backtester(portfolio, benchmark="VOO", end_date="2023-01-01")
     results = backtester.run_backtest()
-    print("Backtest Results:")
+    print(f"Backtest Results: {results}")
