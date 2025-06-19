@@ -23,6 +23,8 @@ from src.tools.api import (
 from src.utils.display import print_backtest_results, format_backtest_row
 from typing_extensions import Callable
 from src.utils.ollama import ensure_ollama_and_model
+import matplotlib
+matplotlib.use('Agg') 
 
 init(autoreset=True)
 

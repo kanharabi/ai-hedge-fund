@@ -27,6 +27,11 @@ from src.utils.ollama import ensure_ollama_and_model
 from src.utils.progress import progress
 from src.utils.visualize import save_graph_as_png
 
+## Net New
+from src.agents.factor_exposure_agent import factor_exposure_agent
+from src.utils.display import render_factor_exposure_table
+## Net New
+
 # Load environment variables from .env file
 load_dotenv(override=True)
 
@@ -110,7 +115,7 @@ def start(state: AgentState):
     return state
 
 
-def create_workflow(selected_analysts=None):
+def create_workflow_orig(selected_analysts=None):
     """Create the workflow with selected analysts."""
     workflow = StateGraph(AgentState)
     workflow.add_node("start_node", start)
@@ -144,9 +149,64 @@ def create_workflow(selected_analysts=None):
     workflow.add_edge("risk_management_agent", "portfolio_manager")
     workflow.add_edge("portfolio_manager", "backtester_agent")
     workflow.add_edge("backtester_agent", END)
+    # workflow.add_edge()
 
     workflow.set_entry_point("start_node")
     return workflow
+
+###### New Workflow Function - Start ##############
+
+def create_workflow(selected_analysts=None):
+    """Create the workflow with selected analysts."""
+    workflow = StateGraph(AgentState)
+    workflow.add_node("start_node", start)
+
+    # Add news agent
+    workflow.add_node("news_agent", news_agent)
+    workflow.add_edge("start_node", "news_agent")
+
+    # Get analyst nodes from the configuration
+    analyst_nodes = get_analyst_nodes()
+
+    # Default to all analysts if none selected
+    if selected_analysts is None:
+        selected_analysts = list(analyst_nodes.keys())
+    # Add selected analyst nodes
+    for analyst_key in selected_analysts:
+        node_name, node_func = analyst_nodes[analyst_key]
+        workflow.add_node(node_name, node_func)
+        workflow.add_edge("news_agent", node_name)
+
+    # Add factor exposure agent
+    workflow.add_node("factor_exposure_agent", factor_exposure_agent)
+
+    # Connect all selected analysts to Factor Exposure Agent
+    for analyst_key in selected_analysts:
+        node_name = analyst_nodes[analyst_key][0]
+        workflow.add_edge(node_name, "factor_exposure_agent")
+
+    # Connect Factor Exposure Agent to Risk Management
+    workflow.add_edge("factor_exposure_agent", "risk_management_agent")
+
+    # Always add risk and portfolio management
+    workflow.add_node("risk_management_agent", risk_management_agent)
+    workflow.add_node("portfolio_manager", portfolio_management_agent)
+    workflow.add_node("backtester_agent", backtester_agent)
+
+    # Connect selected analysts to risk management
+    for analyst_key in selected_analysts:
+        node_name = analyst_nodes[analyst_key][0]
+        workflow.add_edge(node_name, "risk_management_agent")
+
+    workflow.add_edge("risk_management_agent", "portfolio_manager")
+    workflow.add_edge("portfolio_manager", "backtester_agent")
+    workflow.add_edge("backtester_agent", END)
+
+    workflow.set_entry_point("start_node")
+    return workflow
+
+
+###### New Workflow Function - End ##############
 
 
 if __name__ == "__main__":
@@ -330,3 +390,10 @@ if __name__ == "__main__":
     print(f"\n\n{Fore.YELLOW}Final Portfolio ratio: {final_state["data"].get("final_position")}{Style.RESET_ALL}")
     print(f"\n\n{Fore.YELLOW}Total portfolio amount: {final_state["data"].get("total_portfolio_amount")}{Style.RESET_ALL}")
     display_backtest_summary_table(result["backtest_results"], final_state["data"].get("backtest_summary"))
+    
+    ## Net New
+    factor_scores = final_state["data"].get("factor_exposure")
+    if factor_scores:
+        print("\n\nFACTOR EXPOSURE SUMMARY:")
+        print(render_factor_exposure_table(factor_scores))
+    ## Net New

@@ -13,7 +13,8 @@ from pydantic import BaseModel
 from src.graph.state import AgentState
 from src.utils.llm import call_llm
 from src.utils.progress import progress
-
+import matplotlib
+matplotlib.use('Agg')
 
 class BackTestSummary(BaseModel):
     summary: str = "Summary of the backtest results"

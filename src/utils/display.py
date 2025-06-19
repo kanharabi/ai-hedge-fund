@@ -6,7 +6,36 @@ from tabulate import tabulate
 
 from .analysts import ANALYST_ORDER
 
+## Net New
 
+def render_factor_exposure_table(factor_exposure: dict) -> str:
+    """
+    Renders a formatted table of factor exposure scores for each ticker.
+
+    Parameters:
+    - factor_exposure (dict): Dictionary with tickers as keys and factor score dicts as values.
+
+    Returns:
+    - str: Formatted table string.
+    """
+    headers = ["Ticker", "Value", "Growth", "Momentum", "Volatility", "Quality", "Size"]
+    table_data = []
+
+    for ticker, scores in factor_exposure.items():
+        row = [
+            ticker,
+            scores.get("value", "N/A"),
+            scores.get("growth", "N/A"),
+            scores.get("momentum", "N/A"),
+            scores.get("volatility", "N/A"),
+            scores.get("quality", "N/A"),
+            scores.get("size", "N/A")
+        ]
+        table_data.append(row)
+
+    return tabulate(table_data, headers=headers, tablefmt="grid")
+
+## Net New - End
 def sort_agent_signals(signals):
     """Sort agent signals in a consistent order."""
     # Create order mapping from ANALYST_ORDER
