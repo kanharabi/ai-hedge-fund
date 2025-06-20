@@ -15,7 +15,8 @@ from src.graph.state import AgentState
 from src.tools.api import get_company_news, get_insider_trades
 from src.utils.llm import call_llm
 from src.utils.progress import progress
-
+import matplotlib
+matplotlib.use('Agg') 
 
 class NewsAnalysisResult(BaseModel):
     """Results from news analysis."""
