@@ -73,8 +73,10 @@ AVAILABLE_MODELS = [
     # LLMModel(display_name="[openai] DeepSeek-V3", model_name="DeepSeek-V3", provider=ModelProvider.OPENAI),
     LLMModel(display_name="[openai] gpt-4.1", model_name="gpt-4.1", provider=ModelProvider.AZURE),
     # LLMModel(display_name="[openai] gpt-4o", model_name="gpt-4o", provider=ModelProvider.AzURE),
+    # LLMModel(display_name="[openai] gpt-4.1", model_name="gpt-4.1", provider=ModelProvider.AZURE)
     LLMModel(display_name="[openai] o3-mini", model_name="o3-mini", provider=ModelProvider.AZURE),
     LLMModel(display_name="[openai] DeepSeek-V3", model_name="DeepSeek-V3", provider=ModelProvider.AZURE),
+    LLMModel(display_name="[openai] DK - o4", model_name="o4-mini", provider=ModelProvider.AZURE)
 ]
 
 # Define Ollama models separately

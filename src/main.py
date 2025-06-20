@@ -15,6 +15,7 @@ from src.agents.backtester import backtester_agent
 from src.agents.news_agent import news_agent
 from src.agents.portfolio_manager import portfolio_management_agent
 from src.agents.risk_manager import risk_management_agent
+from src.agents.risk_complaince_updated import watchdog_agent
 from src.graph.state import AgentState
 from src.llm.models import get_model_info, LLM_ORDER, ModelProvider, OLLAMA_LLM_ORDER
 from src.utils.analysts import ANALYST_ORDER, get_analyst_nodes
@@ -29,7 +30,7 @@ from src.utils.visualize import save_graph_as_png
 
 ## Net New
 from src.agents.factor_exposure_agent import factor_exposure_agent
-from src.utils.display import render_factor_exposure_table
+from src.utils.display import render_factor_exposure_table, print_watchdog_df
 ## Net New
 
 # Load environment variables from .env file
@@ -138,6 +139,7 @@ def create_workflow_orig(selected_analysts=None):
 
     # Always add risk and portfolio management
     workflow.add_node("risk_management_agent", risk_management_agent)
+    # workflow.add_node("watchdog_agent",watchdog_agent)
     workflow.add_node("portfolio_manager", portfolio_management_agent)
     workflow.add_node("backtester_agent", backtester_agent)
 
@@ -191,6 +193,7 @@ def create_workflow(selected_analysts=None):
     # Always add risk and portfolio management
     workflow.add_node("risk_management_agent", risk_management_agent)
     workflow.add_node("portfolio_manager", portfolio_management_agent)
+    workflow.add_node("watchdog_agent",watchdog_agent)
     workflow.add_node("backtester_agent", backtester_agent)
 
     # Connect selected analysts to risk management
@@ -198,7 +201,11 @@ def create_workflow(selected_analysts=None):
         node_name = analyst_nodes[analyst_key][0]
         workflow.add_edge(node_name, "risk_management_agent")
 
-    workflow.add_edge("risk_management_agent", "portfolio_manager")
+    # workflow.add_edge("risk_management_agent", "portfolio_manager")
+    # Net New - WatchDog #
+    workflow.add_edge("risk_management_agent", "watchdog_agent")
+    workflow.add_edge("watchdog_agent", "portfolio_manager")
+    # Net New - WatchDog #
     workflow.add_edge("portfolio_manager", "backtester_agent")
     workflow.add_edge("backtester_agent", END)
 
@@ -392,6 +399,13 @@ if __name__ == "__main__":
     display_backtest_summary_table(result["backtest_results"], final_state["data"].get("backtest_summary"))
     
     ## Net New
+    watchdog_df = final_state['data'].get("watchdog_df")
+    if not watchdog_df.empty:
+        print("\n\nWATCHDOG ANALYSIS:")
+        print_watchdog_df(watchdog_df)
+    else:
+        print("\n\nWATCHDOG ANALYSIS: No Alerts or Irregularities Detected...!")
+
     factor_scores = final_state["data"].get("factor_exposure")
     if factor_scores:
         print("\n\nFACTOR EXPOSURE SUMMARY:")

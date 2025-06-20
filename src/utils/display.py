@@ -8,6 +8,19 @@ from .analysts import ANALYST_ORDER
 
 ## Net New
 
+import pandas as pd
+
+def print_watchdog_df(df: pd.DataFrame, tablefmt: str = "grid"):
+    """
+    Prints a pandas DataFrame using the tabulate library.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame to print.
+    - tablefmt (str): The format of the table (e.g., 'grid', 'plain', 'pipe', 'html', etc.).
+    """
+    print(tabulate(df, headers='keys', tablefmt=tablefmt, showindex=False))
+
+
 def render_factor_exposure_table(factor_exposure: dict) -> str:
     """
     Renders a formatted table of factor exposure scores for each ticker.
